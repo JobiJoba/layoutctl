@@ -159,6 +159,54 @@ struct LayoutProfile: Codable {
         let windowTitle: String
         let frame: Rect
         let display: Display?
+        let isFullscreen: Bool
+
+        init(
+            bundleIdentifier: String,
+            appName: String,
+            windowTitle: String,
+            frame: Rect,
+            display: Display?,
+            isFullscreen: Bool
+        ) {
+            self.bundleIdentifier = bundleIdentifier
+            self.appName = appName
+            self.windowTitle = windowTitle
+            self.frame = frame
+            self.display = display
+            self.isFullscreen = isFullscreen
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case bundleIdentifier
+            case appName
+            case windowTitle
+            case frame
+            case display
+            case isFullscreen
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            bundleIdentifier = try container.decode(String.self, forKey: .bundleIdentifier)
+            appName = try container.decode(String.self, forKey: .appName)
+            windowTitle = try container.decode(String.self, forKey: .windowTitle)
+            frame = try container.decode(Rect.self, forKey: .frame)
+            display = try container.decodeIfPresent(Display.self, forKey: .display)
+            isFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isFullscreen) ?? false
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(bundleIdentifier, forKey: .bundleIdentifier)
+            try container.encode(appName, forKey: .appName)
+            try container.encode(windowTitle, forKey: .windowTitle)
+            try container.encode(frame, forKey: .frame)
+            try container.encodeIfPresent(display, forKey: .display)
+            if isFullscreen {
+                try container.encode(isFullscreen, forKey: .isFullscreen)
+            }
+        }
     }
 
     let profile: String
@@ -192,6 +240,7 @@ struct Snapshotter {
         }
 
         let runningApplications = NSWorkspace.shared.runningApplications
+        var fullscreenResolver = FullscreenResolver()
         var snapshots: [LayoutProfile.Window] = []
 
         for info in infoList {
@@ -222,12 +271,19 @@ struct Snapshotter {
             let appName = app.localizedName ?? (info[kCGWindowOwnerName as String] as? String) ?? bundleIdentifier
             let displayUUID = displayUUIDForFrame(rect).map { LayoutProfile.Window.Display(uuid: $0) }
 
+            let isFullscreen = fullscreenResolver.isWindowFullscreen(
+                app: app,
+                title: windowTitle,
+                frame: rect
+            )
+
             let window = LayoutProfile.Window(
                 bundleIdentifier: bundleIdentifier,
                 appName: appName,
                 windowTitle: windowTitle,
                 frame: LayoutProfile.Window.Rect(rect: rect),
-                display: displayUUID
+                display: displayUUID,
+                isFullscreen: isFullscreen
             )
 
             snapshots.append(window)
@@ -261,6 +317,110 @@ struct Snapshotter {
             }
         }
         return nil
+    }
+
+    private struct FullscreenResolver {
+        struct WindowState {
+            let title: String
+            let frame: CGRect?
+            let isFullscreen: Bool
+        }
+
+        private var cache: [pid_t: [WindowState]] = [:]
+        private let fullscreenAttribute: CFString = "AXFullScreen" as CFString
+
+        mutating func isWindowFullscreen(app: NSRunningApplication, title: String, frame: CGRect) -> Bool {
+            let states = loadStates(for: app)
+            let normalizedTitle = title.normalizedForMatching
+
+            if !normalizedTitle.isEmpty,
+               let match = states.first(where: { !$0.title.normalizedForMatching.isEmpty && $0.title.normalizedForMatching == normalizedTitle }) {
+                return match.isFullscreen
+            }
+
+            let tolerance: CGFloat = 2.0
+            if let match = states.first(where: {
+                guard let stateFrame = $0.frame else { return false }
+                return stateFrame.approximatelyEquals(frame, tolerance: tolerance)
+            }) {
+                return match.isFullscreen
+            }
+
+            if let match = states.first(where: { $0.title.normalizedForMatching.isEmpty }) {
+                return match.isFullscreen
+            }
+
+            return false
+        }
+
+        private mutating func loadStates(for app: NSRunningApplication) -> [WindowState] {
+            if let cached = cache[app.processIdentifier] {
+                return cached
+            }
+
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value)
+            guard result == AXError.success, let windowElements = value as? [AXUIElement] else {
+                cache[app.processIdentifier] = []
+                return []
+            }
+
+            var states: [WindowState] = []
+
+            for element in windowElements {
+                var titleValue: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleValue)
+                let title = titleValue as? String ?? ""
+
+                let frame = rect(for: element)
+
+                var fullscreenValue: CFTypeRef?
+                let fullscreenResult = AXUIElementCopyAttributeValue(element, fullscreenAttribute, &fullscreenValue)
+                let isFullscreen = (fullscreenResult == AXError.success) && ((fullscreenValue as? Bool) == true)
+
+                states.append(WindowState(title: title, frame: frame, isFullscreen: isFullscreen))
+            }
+
+            cache[app.processIdentifier] = states
+            return states
+        }
+
+        private func rect(for element: AXUIElement) -> CGRect? {
+            var positionValue: CFTypeRef?
+            var sizeValue: CFTypeRef?
+
+            let positionResult = AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue)
+            let sizeResult = AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue)
+
+            guard positionResult == AXError.success,
+                  sizeResult == AXError.success,
+                  let posRaw = positionValue,
+                  let sizeRaw = sizeValue,
+                  CFGetTypeID(posRaw) == AXValueGetTypeID(),
+                  CFGetTypeID(sizeRaw) == AXValueGetTypeID() else {
+                return nil
+            }
+
+            var origin = CGPoint.zero
+            var size = CGSize.zero
+
+            let posAX = posRaw as! AXValue
+            if AXValueGetType(posAX) == .cgPoint {
+                AXValueGetValue(posAX, .cgPoint, &origin)
+            }
+
+            let sizeAX = sizeRaw as! AXValue
+            if AXValueGetType(sizeAX) == .cgSize {
+                AXValueGetValue(sizeAX, .cgSize, &size)
+            }
+
+            guard size.width > 0, size.height > 0 else {
+                return nil
+            }
+
+            return CGRect(origin: origin, size: size)
+        }
     }
 }
 
@@ -413,6 +573,16 @@ struct LayoutRestorer {
                             windowTitle: savedWindow.windowTitle
                         )
                     )
+                    if savedWindow.isFullscreen {
+                        mover.applyFullscreen(
+                            windowDescriptor.element,
+                            enable: true,
+                            context: .init(
+                                bundleIdentifier: bundleIdentifier,
+                                windowTitle: savedWindow.windowTitle
+                            )
+                        )
+                    }
                     restoredCount += 1
                 } catch {
                     print("❌ AX error while moving '\(savedWindow.windowTitle)' (\(bundleIdentifier)): \(error)")
@@ -520,6 +690,8 @@ private struct WindowMover {
         let windowTitle: String
     }
 
+    private let fullscreenAttribute: CFString = "AXFullScreen" as CFString
+
     enum WindowMoverError: Error {
         case invalidPosition
         case invalidSize
@@ -568,7 +740,6 @@ private struct WindowMover {
     }
 
     private func exitFullscreenIfNeeded(_ window: AXUIElement, context: Context) throws {
-        let fullscreenAttribute: CFString = "AXFullScreen" as CFString
         var fullscreenValue: CFTypeRef?
         let getResult = AXUIElementCopyAttributeValue(window, fullscreenAttribute, &fullscreenValue)
         guard getResult == AXError.success else { return }
@@ -584,10 +755,37 @@ private struct WindowMover {
             }
         }
     }
+
+    func applyFullscreen(_ window: AXUIElement, enable: Bool, context: Context) {
+        var currentValue: CFTypeRef?
+        let getResult = AXUIElementCopyAttributeValue(window, fullscreenAttribute, &currentValue)
+        guard getResult == AXError.success else { return }
+
+        if let current = currentValue as? Bool, current == enable {
+            return
+        }
+
+        let result = AXUIElementSetAttributeValue(window, fullscreenAttribute, enable ? kCFBooleanTrue : kCFBooleanFalse)
+        if result != AXError.success {
+            let title = context.windowTitle.isEmpty ? "<untitled>" : context.windowTitle
+            print("⚠️  Unable to \(enable ? "enter" : "exit") fullscreen for '\(title)' (\(context.bundleIdentifier)): \(result).")
+        } else if enable {
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+    }
 }
 
 private extension String {
     var normalizedForMatching: String {
         trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+private extension CGRect {
+    func approximatelyEquals(_ other: CGRect, tolerance: CGFloat) -> Bool {
+        abs(origin.x - other.origin.x) <= tolerance &&
+            abs(origin.y - other.origin.y) <= tolerance &&
+            abs(size.width - other.size.width) <= tolerance &&
+            abs(size.height - other.size.height) <= tolerance
     }
 }
