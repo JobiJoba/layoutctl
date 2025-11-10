@@ -9,3 +9,6 @@
 ## layoutctl delete command
 - The Swift CLI now supports `layoutctl delete <profile>` to remove the stored JSON profile from `~/.layoutctl/layouts`, returning a `profileNotFound` error if the file is missing.
 
+## Raycast restore – delete profiles
+- The Raycast `Restore Layout` command now offers a destructive action to delete the selected profile via `layoutctl delete`, with confirmation and list refresh.
+

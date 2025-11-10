@@ -1,10 +1,12 @@
 import {
   Action,
   ActionPanel,
+  Alert,
   Color,
   Icon,
   List,
   Toast,
+  confirmAlert,
   showToast,
 } from "@raycast/api"
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -24,7 +26,7 @@ export default function RestoreLayout() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [error, setError] = useState<string>()
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const [isMutating, setIsMutating] = useState(false)
   const [searchText, setSearchText] = useState("")
 
   const loadProfiles = useCallback(async () => {
@@ -85,7 +87,7 @@ export default function RestoreLayout() {
     const formatted = name.trim()
     if (!formatted) return
 
-    setIsSaving(true)
+    setIsMutating(true)
     try {
       await execAsync(`${LAYOUTCTL} save ${escapeArgument(formatted)}`)
       await showToast({
@@ -102,14 +104,49 @@ export default function RestoreLayout() {
           "Check Accessibility permission and make sure layoutctl can move windows.",
       })
     } finally {
-      setIsSaving(false)
+      setIsMutating(false)
+    }
+  }
+
+  const deleteProfile = async (profile: Profile) => {
+    const formatted = profile.profile
+    const confirmed = await confirmAlert({
+      title: `Delete ${formatted}?`,
+      message: "This removes the saved layout profile JSON.",
+      icon: { source: Icon.Trash, tintColor: Color.Red },
+      primaryAction: {
+        title: "Delete",
+        style: Alert.ActionStyle.Destructive,
+      },
+    })
+
+    if (!confirmed) return
+
+    setIsMutating(true)
+    try {
+      await execAsync(`${LAYOUTCTL} delete ${escapeArgument(formatted)}`)
+      await showToast({
+        style: Toast.Style.Success,
+        title: `Deleted ${formatted}`,
+      })
+      await loadProfiles()
+    } catch (err) {
+      console.error(err)
+      await showToast({
+        style: Toast.Style.Failure,
+        title: `Failed to delete ${formatted}`,
+        message:
+          "Ensure layoutctl is installed and that the profile still exists on disk.",
+      })
+    } finally {
+      setIsMutating(false)
     }
   }
 
   const shouldShowCreateOption =
     !!searchText.trim() &&
     !isLoading &&
-    !isSaving &&
+    !isMutating &&
     !filteredProfiles.length &&
     !error
 
@@ -127,7 +164,7 @@ export default function RestoreLayout() {
 
   return (
     <List
-      isLoading={isLoading || isSaving}
+      isLoading={isLoading || isMutating}
       searchBarPlaceholder={listPlaceholder}
       isShowingDetail={filteredProfiles.length > 0}
       searchText={searchText}
@@ -178,6 +215,12 @@ export default function RestoreLayout() {
                 icon={Icon.ArrowClockwise}
                 onAction={() => restoreProfile(profile)}
               />
+              <Action
+                title="Delete Layout"
+                icon={Icon.Trash}
+                style={Action.Style.Destructive}
+                onAction={() => void deleteProfile(profile)}
+              />
             </ActionPanel>
           }
         />
@@ -203,7 +246,7 @@ export default function RestoreLayout() {
           }
         />
       ) : null}
-      {!isLoading && !isSaving && !profiles.length && !searchText.trim() ? (
+      {!isLoading && !isMutating && !profiles.length && !searchText.trim() ? (
         <List.EmptyView
           title="No layouts found"
           description='Save one with "layoutctl save <profile>" first.'
