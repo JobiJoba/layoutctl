@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "name": "layoutctl",
+  "title": "Layout Control",
+  "description": "Restore saved macOS window layouts via layoutctl.",
+  "author": "Joba",
+  "icon": "command-icon.png",
+  "categories": ["Developer Tools"],
+  "commands": [
+    {
+      "name": "restore",
+      "title": "Restore Layout",
+      "subtitle": "layoutctl",
+      "description": "Pick a saved layout profile to restore.",
+      "mode": "view",
+      "arguments": [],
+      "defaultWindowSize": {
+        "width": 480,
+        "height": 640
+      }
+    }
+  ]
+}
+{
+  "schemaVersion": 1,
+  "title": "Layout Control",
+  "name": "layoutctl",
+  "description": "Restore saved macOS window layouts via layoutctl.",
+  "author": "Joba",
+  "assets": [],
+  "commands": [
+    {
+      "name": "restore",
+      "title": "Restore Layout",
+      "subtitle": "layoutctl",
+      "description": "Pick a saved layout profile to restore.",
+      "mode": "view",
+      "arguments": [],
+      "defaultWindowSize": {
+        "width": 480,
+        "height": 640
+      }
+    }
+  ]
+}
+
