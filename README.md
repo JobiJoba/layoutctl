@@ -7,6 +7,16 @@
 
 Together they let you script layout automation locally and trigger it from Raycast.
 
+
+App was made for my own need, develop with Cursor AI.
+
+## Limitation
+
+- Save only the open virtual desktop (multiple screen)
+- Doesn't work with fullscreen
+
+(you are welcome to PR this)
+
 ## Install
 
 - Clone this repo
