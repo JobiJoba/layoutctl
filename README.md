@@ -7,7 +7,6 @@
 
 Together they let you script layout automation locally and trigger it from Raycast.
 
-
 ## Install
 
 - Clone this repo
@@ -21,12 +20,10 @@ Then install the raycast extension for the first time
 
 ```sh
 cd raycast-extension/layoutctl
-npx ray dev 
+npx ray dev
 ```
 
-(once installed you can close the terminal no need to keep it running). 
-
-
+(once installed you can close the terminal no need to keep it running).
 
 ## Build and Install the CLI as a Dev
 
@@ -41,7 +38,7 @@ That drops the release binary into `/usr/local/bin/layoutctl` with the correct p
 
 ## Set Up the Raycast Extension
 
-From `/Users/joba/Projects/Private/AIChat/macosapp-layout/raycast-extension/layoutctl`:
+From `.raycast-extension/layoutctl`:
 
 ```sh
 npm install
@@ -49,5 +46,3 @@ npx ray dev
 ```
 
 `npx ray dev` launches the Raycast development environment so you can run and iterate on the extension locally.
-
-
