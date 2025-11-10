@@ -10,6 +10,22 @@ Together they let you script layout automation locally and trigger it from Rayca
 
 ## Install
 
+- Clone this repo
+- Run this command which will take the precompiled executable from this repo
+
+```sh
+sudo install -m 755 .bin/layoutctl /usr/local/bin/layoutctl
+```
+
+Then install the raycast extension for the first time
+
+```sh
+cd raycast-extension/layoutctl
+npx ray dev 
+```
+
+(once installed you can close the terminal no need to keep it running). 
+
 
 
 ## Build and Install the CLI as a Dev
